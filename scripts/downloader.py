@@ -3,11 +3,12 @@ from tkinter import ttk
 import yt_dlp as youtube_dl
 import pyperclip
 import os
+import subprocess
 from message_box import show_error  # Importa la función show_error desde message_box.py
 
 # Configuración de la ventana
 width = 600
-height = 600  # Aumentamos la altura para mostrar la lista de videos
+height = 600
 root = tk.Tk()
 root.title("Python Downloader")
 
@@ -34,19 +35,17 @@ def actualizar_progreso(d):
 
 def descargar_video():
     """Descargar el video usando el enlace del portapapeles."""
-    # Obtener el enlace del portapapeles
     video_link = pyperclip.paste()
 
     if not video_link.strip():
-        show_error(root, "No tienes ningún enlace en el portapapeles")  # Mostrar el error con el mensaje
+        show_error(root, "No tienes ningún enlace en el portapapeles")
         return
-    
+
     try:
-        # Configuración para descargar el video
         ydl_opts = {
-            'outtmpl': f'{video_dir}%(title)s.%(ext)s',  # Carpeta de salida y formato de nombre
-            'format': 'best',  # Descargar en la mejor calidad disponible
-            'progress_hooks': [actualizar_progreso],  # Hook para actualizar el progreso
+            'outtmpl': f'{video_dir}%(title)s.%(ext)s',
+            'format': 'best',
+            'progress_hooks': [actualizar_progreso],
         }
         with youtube_dl.YoutubeDL(ydl_opts) as ydl:
             status_label.config(text="Descargando...", fg="blue")
@@ -55,29 +54,20 @@ def descargar_video():
             progreso['value'] = 100
             root.update_idletasks()
 
-        # Después de descargar el video, actualizar la lista de videos
         actualizar_lista_videos()
 
     except Exception as e:
         status_label.config(text=f"Error: {str(e)}", fg="red")
 
 def obtener_info_video(video_path):
-    """Obtener información sobre el video (resolución, calidad de sonido, duración)."""
     try:
-        # Usamos ffprobe (parte de ffmpeg) para obtener los metadatos del video
-        import subprocess
         result = subprocess.run(
             ['ffprobe', '-v', 'error', '-show_entries', 'stream=width,height,codec_name,duration', 
              '-of', 'default=noprint_wrappers=1', video_path],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
-        
-        # Parseamos los datos obtenidos
         info = result.stdout.split('\n')
-        width = height = None
-        codec = None
-        duration = None
-        
+        width = height = codec = duration = None
         for line in info:
             if "width=" in line:
                 width = line.split('=')[1]
@@ -91,56 +81,51 @@ def obtener_info_video(video_path):
         resolution = f"{width}x{height}" if width and height else "Desconocida"
         duration_str = f"{int(duration // 60)}:{int(duration % 60):02d}" if duration else "Desconocida"
         return resolution, codec, duration_str
-    except Exception as e:
+    except Exception:
         return "Error", "Error", "Error"
 
 def actualizar_lista_videos():
-    """Actualizar la lista de videos en la interfaz gráfica."""
-    # Limpiar la lista actual
     for row in video_tree.get_children():
         video_tree.delete(row)
 
-    # Leer todos los videos en la carpeta
     for filename in os.listdir(video_dir):
-        if filename.endswith((".mp4", ".mkv", ".avi")):  # Filtrar archivos de video
+        if filename.endswith((".mp4", ".mkv", ".avi")):
             video_path = os.path.join(video_dir, filename)
-
-            # Obtener información del video
             resolution, codec, duration = obtener_info_video(video_path)
-
-            # Obtener el tamaño del archivo
-            file_size = os.path.getsize(video_path) / (1024 * 1024)  # Convertir a MB
+            file_size = os.path.getsize(video_path) / (1024 * 1024)
             file_size = f"{file_size:.2f} MB"
-
-            # Agregar una fila a la lista
             video_tree.insert("", "end", values=(filename, file_size, resolution, codec, duration))
 
-# Widgets
-button = tk.Button(root, text="Descargar", command=descargar_video)
-button.pack(side="top", padx=10, pady=10)
+def abrir_carpeta_videos():
+    try:
+        carpeta_absoluta = os.path.abspath(video_dir)
+        os.makedirs(carpeta_absoluta, exist_ok=True)  # Crear la carpeta si no existe
+        subprocess.Popen(f'explorer "{carpeta_absoluta}"' if os.name == "nt" else f'open "{carpeta_absoluta}"')
+    except Exception as e:
+        show_error(root, f"No se pudo abrir la carpeta: {str(e)}")
 
-# Barra de progreso
+# Widgets
+button_descargar = tk.Button(root, text="Descargar", command=descargar_video)
+button_descargar.pack(side="top", padx=10, pady=10)
+
+button_abrir_carpeta = tk.Button(root, text="Abrir carpeta", command=abrir_carpeta_videos)
+button_abrir_carpeta.pack(side="top", padx=50, pady=10)
+
 progreso = ttk.Progressbar(root, orient="horizontal", length=500, mode="determinate")
 progreso.pack(side="top", padx=10, pady=10)
 
-# Etiqueta de estado
 status_label = tk.Label(root, text="", bg="white", font=("Arial", 10))
 status_label.pack(side="top", pady=20)
 
-# Lista de videos
 columns = ("Nombre", "Peso", "Resolución", "Calidad de sonido", "Duración")
 video_tree = ttk.Treeview(root, columns=columns, show="headings", height=8)
-video_tree.pack(side="top", padx=10, pady=10)
+video_tree.pack(side="bottom", padx=10, pady=10)
 
-# Configurar las cabeceras de las columnas
 for col in columns:
     video_tree.heading(col, text=col)
 
-# Configurar y centrar ventana
 centrar_window(root, width, height)
 root.configure(bg="white")
-
-# Actualizar la lista de videos al inicio
 actualizar_lista_videos()
 
 root.mainloop()
